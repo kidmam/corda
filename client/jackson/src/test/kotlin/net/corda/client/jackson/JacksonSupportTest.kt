@@ -11,6 +11,8 @@ import com.nhaarman.mockito_kotlin.doReturn
 import com.nhaarman.mockito_kotlin.whenever
 import net.corda.client.jackson.internal.valueAs
 import net.corda.core.contracts.Amount
+import net.corda.core.contracts.Command
+import net.corda.core.contracts.TransactionState
 import net.corda.core.cordapp.CordappProvider
 import net.corda.core.crypto.*
 import net.corda.core.crypto.CompositeKey
@@ -27,6 +29,7 @@ import net.corda.core.serialization.serialize
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.utilities.*
 import net.corda.finance.USD
+import net.corda.finance.contracts.asset.Cash
 import net.corda.nodeapi.internal.crypto.x509Certificates
 import net.corda.testing.common.internal.testNetworkParameters
 import net.corda.testing.contracts.DummyContract
@@ -214,8 +217,38 @@ class JacksonSupportTest(@Suppress("unused") private val name: String, factory: 
     }
 
     @Test
+    fun TransactionState() {
+        val txState = TransactionState(
+                data = DummyContract.SingleOwnerState(magicNumber = 123, owner = MINI_CORP.party),
+                contract = Cash.PROGRAM_ID,
+                notary = DUMMY_NOTARY
+        )
+        val json = mapper.valueToTree<ObjectNode>(txState)
+        println(mapper.writeValueAsString(json))
+        partyObjectMapper.identities += listOf(MINI_CORP.party, DUMMY_NOTARY)
+        assertThat(mapper.convertValue<TransactionState<*>>(json)).isEqualTo(txState)
+    }
+
+    @Test
+    fun Command() {
+        val command = Command(DummyCommandData, listOf(BOB_PUBKEY))
+        val json = mapper.valueToTree<ObjectNode>(command)
+        assertThat(mapper.convertValue<Command<*>>(json)).isEqualTo(command)
+    }
+
+    // TODO Issued
+    // TODO PartyAndReference
+
+    @Test
     fun CordaX500Name() {
-        testToStringSerialisation(CordaX500Name(commonName = "COMMON", organisationUnit = "ORG UNIT", organisation = "ORG", locality = "NYC", state = "NY", country = "US"))
+        testToStringSerialisation(CordaX500Name(
+                commonName = "COMMON",
+                organisationUnit = "ORG UNIT",
+                organisation = "ORG",
+                locality = "NYC",
+                state = "NY",
+                country = "US"
+        ))
     }
 
     @Test
@@ -414,6 +447,18 @@ class JacksonSupportTest(@Suppress("unused") private val name: String, factory: 
         assertThat(mapper.convertValue<NonCtorPropertiesData>(json)).isEqualTo(data)
     }
 
+    @Test
+    fun `kotlin object`() {
+        val json = mapper.valueToTree<ObjectNode>(KotlinObject)
+        assertThat(mapper.convertValue<KotlinObject>(json)).isSameAs(KotlinObject)
+    }
+
+    @Test
+    fun `@CordaSerializable kotlin object`() {
+        val json = mapper.valueToTree<ObjectNode>(CordaSerializableKotlinObject)
+        assertThat(mapper.convertValue<CordaSerializableKotlinObject>(json)).isSameAs(CordaSerializableKotlinObject)
+    }
+
     private fun makeDummyStx(): SignedTransaction {
         val wtx = DummyContract.generateInitial(1, DUMMY_NOTARY, MINI_CORP.ref(1))
                 .toWireTransaction(services)
@@ -446,6 +491,11 @@ class JacksonSupportTest(@Suppress("unused") private val name: String, factory: 
         @Suppress("unused")
         val nonCtor: Int get() = value
     }
+
+    private object KotlinObject
+
+    @CordaSerializable
+    private object CordaSerializableKotlinObject
 
     private class TestPartyObjectMapper : JacksonSupport.PartyObjectMapper {
         val identities = ArrayList<Party>()

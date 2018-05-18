@@ -525,14 +525,17 @@ fun ClassWhitelist.requireWhitelisted(type: Type) {
     }
 }
 
-fun ClassWhitelist.isWhitelisted(clazz: Class<*>) = (hasListed(clazz) || hasAnnotationInHierarchy(clazz))
+fun ClassWhitelist.isWhitelisted(clazz: Class<*>) = (hasListed(clazz) || isCordaSerializable(clazz))
 fun ClassWhitelist.isNotWhitelisted(clazz: Class<*>) = !(this.isWhitelisted(clazz))
 
-// Recursively check the class, interfaces and superclasses for our annotation.
-fun ClassWhitelist.hasAnnotationInHierarchy(type: Class<*>): Boolean {
+/**
+ * Check the given [Class] has the [CordaSerializable] annotation, either directly or inherited from any of its super
+ * classes or interfaces.
+ */
+fun isCordaSerializable(type: Class<*>): Boolean {
     return type.isAnnotationPresent(CordaSerializable::class.java)
-            || type.interfaces.any { hasAnnotationInHierarchy(it) }
-            || (type.superclass != null && hasAnnotationInHierarchy(type.superclass))
+            || type.interfaces.any(::isCordaSerializable)
+            || (type.superclass != null && isCordaSerializable(type.superclass))
 }
 
 /**

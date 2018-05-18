@@ -273,6 +273,27 @@ fun <T : Any> KClass<T>.objectOrNewInstance(): T {
 }
 
 /**
+ * Is this a Kotlin object? We use our own reflection here rather than [KClass.objectInstance] because Kotlin reflection
+ * won't work for private objects, and can throw exceptions in other circumstances as well.
+ */
+val <T : Any> Class<T>.kotlinObjectInstance: T? get() {
+    return try {
+        declaredFields.singleOrNull {
+            it.name == "INSTANCE" &&
+                    it.type == this &&
+                    Modifier.isStatic(it.modifiers) &&
+                    Modifier.isFinal(it.modifiers) &&
+                    Modifier.isPublic(it.modifiers)
+        }?.let {
+            it.isAccessible = true
+            uncheckedCast(it.get(null))
+        }
+    } catch (t: Throwable) {
+        null
+    }
+}
+
+/**
  * A simple wrapper around a [Field] object providing type safe read and write access using [value], ignoring the field's
  * visibility.
  */

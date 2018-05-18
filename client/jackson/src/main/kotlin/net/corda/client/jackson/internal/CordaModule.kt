@@ -2,6 +2,7 @@
 
 package net.corda.client.jackson.internal
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonValue
 import com.fasterxml.jackson.core.JsonGenerator
 import com.fasterxml.jackson.core.JsonParser
@@ -14,14 +15,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.ser.BeanPropertyWriter
 import com.fasterxml.jackson.databind.ser.BeanSerializerModifier
 import net.corda.client.jackson.JacksonSupport
-import net.corda.core.contracts.Amount
+import net.corda.core.contracts.*
 import net.corda.core.crypto.DigitalSignature
 import net.corda.core.crypto.SecureHash
 import net.corda.core.crypto.TransactionSignature
 import net.corda.core.identity.*
 import net.corda.core.internal.DigitalSignatureWithCert
+import net.corda.core.internal.kotlinObjectInstance
 import net.corda.core.node.NodeInfo
-import net.corda.core.serialization.*
+import net.corda.core.serialization.SerializedBytes
+import net.corda.core.serialization.deserialize
+import net.corda.core.serialization.serialize
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.WireTransaction
 import net.corda.core.utilities.ByteSequence
@@ -29,7 +33,7 @@ import net.corda.core.utilities.NetworkHostAndPort
 import net.corda.serialization.internal.AllWhitelist
 import net.corda.serialization.internal.amqp.SerializerFactory
 import net.corda.serialization.internal.amqp.constructorForDeserialization
-import net.corda.serialization.internal.amqp.createSerializerFactoryFactory
+import net.corda.serialization.internal.amqp.isCordaSerializable
 import net.corda.serialization.internal.amqp.propertiesForSerialization
 import java.security.PublicKey
 
@@ -54,6 +58,8 @@ class CordaModule : SimpleModule("corda-core") {
         context.setMixInAnnotations(DigitalSignatureWithCert::class.java, ByteSequenceWithPropertiesMixin::class.java)
         context.setMixInAnnotations(TransactionSignature::class.java, ByteSequenceWithPropertiesMixin::class.java)
         context.setMixInAnnotations(SignedTransaction::class.java, SignedTransactionMixin2::class.java)
+        context.setMixInAnnotations(TransactionState::class.java, TransactionStateMixin::class.java)
+        context.setMixInAnnotations(Command::class.java, CommandMixin::class.java)
         context.setMixInAnnotations(WireTransaction::class.java, JacksonSupport.WireTransactionMixin::class.java)
         context.setMixInAnnotations(NodeInfo::class.java, NodeInfoMixin::class.java)
     }
@@ -63,17 +69,18 @@ class CordaModule : SimpleModule("corda-core") {
  * Use the same properties that AMQP serialization uses if the POJO is @CordaSerializable
  */
 private class CordaSerializableBeanSerializerModifier : BeanSerializerModifier() {
-    // We need a SerializerFactory when scanning for properties but don't actually use it so any will do
-    private val serializerFactory = SerializerFactory(AllWhitelist, Thread.currentThread().contextClassLoader)
+    // We need to pass in a SerializerFactory when scanning for properties, but don't actually do any serialisation so any will do
+    private val serializerFactory = SerializerFactory(AllWhitelist, javaClass.classLoader)
 
     override fun changeProperties(config: SerializationConfig,
                                   beanDesc: BeanDescription,
                                   beanProperties: MutableList<BeanPropertyWriter>): MutableList<BeanPropertyWriter> {
         // TODO We're assuming here that Jackson gives us a superset of all the properties. Either confirm this or
         // make sure the returned beanProperties are exactly the AMQP properties
-        if (beanDesc.beanClass.isAnnotationPresent(CordaSerializable::class.java)) {
-            val ctor = constructorForDeserialization(beanDesc.beanClass)
-            val amqpProperties = propertiesForSerialization(ctor, beanDesc.beanClass, serializerFactory).serializationOrder
+        val beanClass = beanDesc.beanClass
+        if (isCordaSerializable(beanClass) && beanClass.kotlinObjectInstance == null) {
+            val ctor = constructorForDeserialization(beanClass)
+            val amqpProperties = propertiesForSerialization(ctor, beanClass, serializerFactory).serializationOrder
             beanProperties.removeIf { bean -> amqpProperties.none { amqp -> amqp.serializer.name == bean.name } }
         }
         return beanProperties
@@ -85,7 +92,9 @@ private class CordaSerializableBeanSerializerModifier : BeanSerializerModifier()
 private interface NetworkHostAndPortMixin
 
 private class NetworkHostAndPortDeserializer : JsonDeserializer<NetworkHostAndPort>() {
-    override fun deserialize(parser: JsonParser, ctxt: DeserializationContext) = NetworkHostAndPort.parse(parser.text)
+    override fun deserialize(parser: JsonParser, ctxt: DeserializationContext): NetworkHostAndPort {
+        return NetworkHostAndPort.parse(parser.text)
+    }
 }
 
 @JsonSerialize(using = PartyAndCertificateSerializer::class)
@@ -120,6 +129,18 @@ private class SignedTransactionDeserializer : JsonDeserializer<SignedTransaction
 }
 
 private class SignedTransactionWrapper(val txBits: ByteArray, val signatures: List<TransactionSignature>)
+
+private interface TransactionStateMixin {
+    @get:JsonTypeInfo(use = JsonTypeInfo.Id.CLASS)
+    val data: ContractState
+    @get:JsonTypeInfo(use = JsonTypeInfo.Id.CLASS)
+    val constraint: AttachmentConstraint
+}
+
+private interface CommandMixin {
+    @get:JsonTypeInfo(use = JsonTypeInfo.Id.CLASS)
+    val value: CommandData
+}
 
 @JsonSerialize(using = SerializedBytesSerializer::class)
 @JsonDeserialize(using = SerializedBytesDeserializer::class)

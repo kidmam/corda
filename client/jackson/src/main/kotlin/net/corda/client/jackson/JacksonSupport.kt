@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.*
 import com.fasterxml.jackson.databind.*
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.fasterxml.jackson.databind.annotation.JsonSerialize
+import com.fasterxml.jackson.databind.deser.BeanDeserializerModifier
 import com.fasterxml.jackson.databind.deser.std.NumberDeserializers
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
@@ -27,6 +28,7 @@ import net.corda.core.identity.CordaX500Name
 import net.corda.core.identity.Party
 import net.corda.core.internal.CertRole
 import net.corda.core.internal.VisibleForTesting
+import net.corda.core.internal.kotlinObjectInstance
 import net.corda.core.internal.uncheckedCast
 import net.corda.core.messaging.CordaRPCOps
 import net.corda.core.node.NodeInfo
@@ -153,13 +155,28 @@ object JacksonSupport {
                 addSerializer(Date::class.java, DateSerializer)
             })
             registerModule(CordaModule())
-            registerModule(KotlinModule())
+            registerModule(KotlinModule().apply {
+                setDeserializerModifier(KotlinObjectDeserializerModifier)
+            })
 
             addMixIn(BigDecimal::class.java, BigDecimalMixin::class.java)
             addMixIn(X500Principal::class.java, X500PrincipalMixin::class.java)
             addMixIn(X509Certificate::class.java, X509CertificateMixin::class.java)
             addMixIn(CertPath::class.java, CertPathMixin::class.java)
         }
+    }
+
+    private object KotlinObjectDeserializerModifier : BeanDeserializerModifier() {
+        override fun modifyDeserializer(config: DeserializationConfig,
+                                        beanDesc: BeanDescription,
+                                        deserializer: JsonDeserializer<*>): JsonDeserializer<*> {
+            val objectInstance = beanDesc.beanClass.kotlinObjectInstance
+            return if (objectInstance != null) KotlinObjectDeserializer(objectInstance) else deserializer
+        }
+    }
+
+    private class KotlinObjectDeserializer<T>(private val objectInstance: T) : JsonDeserializer<T>() {
+        override fun deserialize(parser: JsonParser, ctxt: DeserializationContext): T = objectInstance
     }
 
     @ToStringSerialize
