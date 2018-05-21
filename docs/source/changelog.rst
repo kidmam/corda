@@ -72,6 +72,8 @@ Unreleased
 
 * Node can be shut down abruptly by ``shutdown`` function in `CordaRPCOps` or gracefully (draining flows first) through ``gracefulShutdown`` command from shell.
 
+* Table name with a typo changed from ``NODE_ATTCHMENTS_CONTRACTS`` to ``NODE_ATTACHMENTS_CONTRACTS``.
+
 .. _changelog_v3.1:
 
 Version 3.1
