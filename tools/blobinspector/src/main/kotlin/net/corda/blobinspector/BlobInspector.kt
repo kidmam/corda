@@ -45,15 +45,12 @@ interface Stringify {
  * Class1 :: C <Class2 <Class3>>
  */
 fun String.simplifyClass(): String {
-
     return if (this.endsWith('>')) {
         val templateStart = this.indexOf('<')
         val clazz = (this.substring(0, templateStart))
         val params = this.substring(templateStart+1, this.length-1).split(',').joinToString { it.simplifyClass() }
-
         "${clazz.simplifyClass()} <$params>"
-    }
-    else {
+    } else {
         substring(this.lastIndexOf('.') + 1).replace("$", " :: ")
     }
 }
@@ -348,7 +345,6 @@ fun inspectDescribed(
             "${typeMap[obj.descriptor]?.name} is neither Composite or Restricted".debug(config)
         }
     }
-
 }
 
 internal object NullEncodingWhitelist : EncodingWhitelist {
@@ -369,7 +365,6 @@ fun inspectBlob(config: Config, blob: ByteArray) {
     if (blobHeader !in headers) {
         throw MalformedBlob("Blob is not a Corda AMQP serialised object graph")
     }
-
 
     val e = DeserializationInput.getEnvelope(bytes, NullEncodingWhitelist)
 
@@ -398,4 +393,3 @@ fun inspectBlob(config: Config, blob: ByteArray) {
         }
     }
 }
-
